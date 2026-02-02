@@ -1,0 +1,83 @@
+---
+title: "london_epc_msoa"
+output: html_document
+date: "2026-02-02"
+---
+
+```{r}
+library(data.table)
+library(here)
+library(stringr)
+library(sf)
+library(tmap)
+library(tidyverse)
+library(janitor)
+library(scales)
+```
+
+## 1. Load in cleaned London EPC data
+
+```{r}
+london_epc_certs_clean <- read.csv(here::here("large_data/london_epc_certs_clean.csv"))
+```
+
+## 2. Aggregate by MSOA
+
+### 2.1 Calculate EE Gap for each MSOA 
+
+For this task, we are only concerned with the ENERGY EFFICIENCY GAP.
+
+```{r}
+
+london_epc_gap_by_msoa <- london_epc_certs_clean %>%
+  group_by(msoa21cd) %>%
+  summarise(
+    gap_avg = mean(energy_efficiency_gap, na.rm = TRUE))  %>%
+  ungroup()
+```
+
+It would also be interesting to consider things like the average age of houses or proportion of flats vs houses. But this is not important for now!
+
+### 2.2 Join MSOA geometries
+
+```{r}
+msoa_shape <- st_read(here::here("data", "raw", "msoa_shape", "MSOA_2021_EW_BGC_V3.shp"))
+
+london_epc_gap_by_msoa_shape <- msoa_shape %>%
+  inner_join(.,
+            london_epc_gap_by_msoa,
+            by = c("MSOA21CD" = "msoa21cd"))
+```
+
+## 3. Aggregate by LA
+
+### 3.1 Calculate EE Gap for each LA
+
+```{r}
+london_epc_gap_by_la <- london_epc_certs_clean %>%
+  group_by(ladcd) %>%
+  summarise(
+    gap_avg = mean(energy_efficiency_gap, na.rm = TRUE))  %>%
+  ungroup()
+```
+
+### 3.2 Join LA geometries
+
+```{r}
+la_shape <- st_read(here::here("data", "raw", "LAD_May_2025", "LAD_MAY_2025_UK_BSC_V2.shp"))
+
+london_epc_gap_by_la_shape <- la_shape %>%
+  inner_join(.,
+            london_epc_gap_by_la,
+            by = c("LAD25CD" = "ladcd"))
+```
+
+## 4. Save new shape files
+
+```{r}
+# for MSOAs
+st_write(london_epc_gap_by_msoa_shape, "data/clean/London_EPC_MSOA_shape/London_EPC_MSOA.shp")
+
+# for LAs
+st_write(london_epc_gap_by_la_shape, "data/clean/London_EPC_LA_shape/London_EPC_LA.shp")
+```

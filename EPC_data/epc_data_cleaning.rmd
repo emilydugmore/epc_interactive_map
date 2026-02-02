@@ -1,0 +1,269 @@
+---
+title: "EPC data cleaning"
+output: html_document
+date: "2025-11-27"
+---
+
+# 1. Data downloads
+
+```{r}
+library(data.table)
+library(here)
+library(stringr)
+library(sf)
+library(tmap)
+library(tidyverse)
+library(janitor)
+library(scales)
+```
+
+## 1.1 32 LAs EPC –\> 1 London EPC
+
+1.  Load EPC csv files for each local authority (only for the selected columns)
+2.  Combine all of these datasets into a single csv file: **london_epc_certs_raw.csv**
+
+```{r eval=FALSE, include=FALSE}
+columns <- c("POSTCODE", "BUILDING_REFERENCE_NUMBER", "CURRENT_ENERGY_RATING",
+  "POTENTIAL_ENERGY_RATING", "CURRENT_ENERGY_EFFICIENCY",
+  "POTENTIAL_ENERGY_EFFICIENCY", "PROPERTY_TYPE", "BUILT_FORM",
+  "INSPECTION_DATE", "LOCAL_AUTHORITY", "CONSTITUENCY",
+  "TRANSACTION_TYPE", "ENVIRONMENT_IMPACT_CURRENT",
+  "ENVIRONMENT_IMPACT_POTENTIAL", "ENERGY_CONSUMPTION_CURRENT",
+  "ENERGY_CONSUMPTION_POTENTIAL", "CO2_EMISSIONS_CURRENT",
+  "CO2_EMISS_CURR_PER_FLOOR_AREA", "CO2_EMISSIONS_POTENTIAL", "TOTAL_FLOOR_AREA",
+  "CONSTRUCTION_AGE_BAND", "TENURE")
+
+c_barnet <- fread(here::here("large_data/Certs_by_LA/certificates_barnet.csv"), select = columns)
+c_barking_dagenham <- fread(here::here("large_data/Certs_by_LA/certificates_barking_dagenham.csv"), select = columns)
+c_bexley            <- fread(here::here("large_data/Certs_by_LA/certificates_bexley.csv"), select = columns)
+c_brent             <- fread(here::here("large_data/Certs_by_LA/certificates_brent.csv"), select = columns)
+c_bromley           <- fread(here::here("large_data/Certs_by_LA/certificates_bromley.csv"), select = columns)
+c_camden            <- fread(here::here("large_data/Certs_by_LA/certificates_camden.csv"), select = columns)
+c_croydon           <- fread(here::here("large_data/Certs_by_LA/certificates_croydon.csv"), select = columns)
+c_ealing            <- fread(here::here("large_data/Certs_by_LA/certificates_ealing.csv"), select = columns)
+c_enfield           <- fread(here::here("large_data/Certs_by_LA/certificates_enfield.csv"), select = columns)
+c_greenwich         <- fread(here::here("large_data/Certs_by_LA/certificates_greenwich.csv"), select = columns)
+c_hackney           <- fread(here::here("large_data/Certs_by_LA/certificates_hackney.csv"), select = columns)
+c_hammersmith_fulham <- fread(here::here("large_data/Certs_by_LA/certificates_hammersmith_fulham.csv"), select = columns)
+c_haringey          <- fread(here::here("large_data/Certs_by_LA/certificates_haringey.csv"), select = columns)
+c_harrow            <- fread(here::here("large_data/Certs_by_LA/certificates_harrow.csv"), select = columns)
+c_havering          <- fread(here::here("large_data/Certs_by_LA/certificates_havering.csv"), select = columns)
+c_hillingdon        <- fread(here::here("large_data/Certs_by_LA/certificates_hillingdon.csv"), select = columns)
+c_hounslow          <- fread(here::here("large_data/Certs_by_LA/certificates_hounslow.csv"), select = columns)
+c_islington         <- fread(here::here("large_data/Certs_by_LA/certificates_islington.csv"), select = columns)
+c_kensington_chelsea <- fread(here::here("large_data/Certs_by_LA/certificates_kensington_chelsea.csv"), select = columns)
+c_kingston          <- fread(here::here("large_data/Certs_by_LA/certificates_kingston_upon_thames.csv"), select = columns)
+c_lambeth           <- fread(here::here("large_data/Certs_by_LA/certificates_lambeth.csv"), select = columns)
+c_lewisham          <- fread(here::here("large_data/Certs_by_LA/certificates_lewisham.csv"), select = columns)
+c_merton            <- fread(here::here("large_data/Certs_by_LA/certificates_merton.csv"), select = columns)
+c_newham            <- fread(here::here("large_data/Certs_by_LA/certificates_newham.csv"), select = columns)
+c_redbridge         <- fread(here::here("large_data/Certs_by_LA/certificates_redbridge.csv"), select = columns)
+c_richmond          <- fread(here::here("large_data/Certs_by_LA/certificates_richmond_upon_thames.csv"), select = columns)
+c_southwark         <- fread(here::here("large_data/Certs_by_LA/certificates_southwark.csv"), select = columns)
+c_sutton            <- fread(here::here("large_data/Certs_by_LA/certificates_sutton.csv"), select = columns)
+c_tower_hamlets     <- fread(here::here("large_data/Certs_by_LA/certificates_tower_hamlets.csv"), select = columns)
+c_waltham_forest    <- fread(here::here("large_data/Certs_by_LA/certificates_waltham_forest.csv"), select = columns)
+c_wandsworth        <- fread(here::here("large_data/Certs_by_LA/certificates_wandsworth.csv"), select = columns)
+c_westminster       <- fread(here::here("large_data/Certs_by_LA/certificates_westminster.csv"), select = columns)
+
+# list of all local authority certificate objects in the environment
+la_list <- mget(ls(pattern = "^c_"))
+
+# combine into a single dataframe
+london_epc_certs_raw <- data.table::rbindlist(la_list, use.names = TRUE, fill = TRUE)
+
+write.csv(london_epc_certs_raw, here::here("large_data/london_epc_certs_raw.csv"), row.names = FALSE)
+```
+
+### 1.1.1 EPCs in London
+
+```{r}
+london_epc_certs_raw <- read.csv(here::here("large_data/london_epc_certs_raw.csv"),  na.strings = c("unknown", "NO DATA!", "NODATA!", "", "INVALID!"))
+```
+
+#### Data cleaning
+
+-   Clean column names
+
+-   Keep only unique inspection dates (according to the latest date)
+
+-   Remove unessessary symbols
+
+```{r}
+london_epc_certs_clean <- london_epc_certs_raw %>%
+  clean_names()%>%
+  #convert inspection date
+  mutate(inspection_date = as.Date(inspection_date, format = "%Y-%m-%d")) %>%
+  # since buildings will often have multiple inspection dates, we choose only the first one
+  group_by(building_reference_number) %>%      
+  arrange(desc(inspection_date)) %>%
+  slice(1) %>%  
+  ungroup()
+
+# remove unnecessary symbols in construction age band
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  mutate(construction_age_band = str_remove(construction_age_band, ".*: "))
+```
+
+-   Check how many NA values there are for each variable
+
+```{r}
+NA_val <- sapply(london_epc_certs_clean, function(x) {
+  c(
+    NA_count = sum(is.na(x)),
+    Total = length(x),
+    Percent_NA = round(sum(is.na(x))/length(x) * 100, 2)
+  )})
+```
+
+-   Reassign construction_age_band values
+-   Calculate median for each age band
+
+```{r}
+# check to see what age bands there are for construction age
+age_bands <- london_epc_certs_clean %>%
+  group_by(construction_age_band) %>%
+  summarise(count = n(), .groups = "drop")
+
+# re-assigning each construction age band
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  mutate(construction_age_band = case_when(
+    construction_age_band < "1900" ~ "pre 1900",          # anything before 1900
+    construction_age_band >= "1900" & construction_age_band <= "1929" ~ "1900-1929",
+    construction_age_band >= "1930" & construction_age_band <= "1949" ~ "1930-1949",
+    construction_age_band >= "1950" & construction_age_band <= "1966" ~ "1950-1966",
+    construction_age_band >= "1967" & construction_age_band <= "1975" ~ "1967-1975",
+    construction_age_band >= "1976" & construction_age_band <= "1982" ~ "1976-1982",
+    construction_age_band >= "1983" & construction_age_band <= "1990" ~ "1983-1990",
+    construction_age_band >= "1991" & construction_age_band <= "1995" ~ "1991-1995",
+    construction_age_band >= "1996" & construction_age_band <= "2002" ~ "1996-2002",
+    construction_age_band >= "2003" & construction_age_band <= "2006" ~ "2003-2006",
+    construction_age_band >= "2007" & construction_age_band <= "2011" ~ "2007-2011",
+    construction_age_band >= "2012" & construction_age_band <= "2021" ~ "2012-2021",
+    construction_age_band >= "2022" & construction_age_band <= "2025" ~ "2022-2025",
+    construction_age_band > "2025" ~ NA,
+    TRUE ~ construction_age_band  # keep everything else unchanged
+  ))
+
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  mutate(construction_age_band_median = case_when(
+    construction_age_band < "1900" ~ NA,          # anything before 1900
+    construction_age_band == "1900-1929"   ~ 1914.5,
+    construction_age_band == "1930-1949"   ~ 1939.5,
+    construction_age_band == "1950-1966"   ~ 1958,
+    construction_age_band == "1967-1975"   ~ 1971,
+    construction_age_band == "1976-1982"   ~ 1979,
+    construction_age_band == "1983-1990"   ~ 1986.5,
+    construction_age_band == "1991-1995"   ~ 1993,
+    construction_age_band == "1996-2002"   ~ 1999,
+    construction_age_band == "2003-2006"   ~ 2004.5,
+    construction_age_band == "2007-2011"   ~ 2009,
+    construction_age_band == "2012-2021"   ~ 2016.5,
+    construction_age_band == "2022-2025"   ~ 2023.5,
+    TRUE ~ NA  # keep everything else unchanged
+  ))
+```
+
+-   Reassign tenure category values
+
+```{r}
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  mutate(tenure = case_when(
+    tenure == "Rented (private)" ~ "rent_private",
+    tenure == "Rented (social)" ~ "rent_social",
+    tenure == "Owner-occupied" ~ "owner_occupied",
+    tenure == "owner-occupied" ~ "owner_occupied",
+    tenure == "rental (private)" ~ "rent_private",
+    tenure == "rental (social)" ~ "rent_social",
+    tenure == "Not defined - use in the case of a new dwelling for which the intended tenure in not known. It is not to be used for an existing dwelling" ~ NA))
+   
+```
+
+-   Calculate energy efficiency gap
+
+```{r}
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  mutate(energy_efficiency_gap = potential_energy_efficiency - current_energy_efficiency)
+```
+
+-   Adding a simplified built form column
+
+```{r}
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  mutate(built_form_simple = case_when(
+    built_form == "Detached" ~ "Detached",
+    built_form == "Semi-Detached" ~ "Semi-Detached",
+    built_form %in% c("Mid-Terrace", "End-Terrace",
+                      "Enclosed Mid-Terrace", "Enclosed End-Terrace") ~ "Terraced",
+    TRUE ~ "Not Recorded"
+  ))
+```
+
+-   Adding a simplified tenure column
+
+```{r}
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  mutate(tenure_simple = case_when(
+    tenure == "owner_occupied" ~ "owner_occupied",
+    tenure %in% c("rent_private", "rent_social") ~ "rent",
+    TRUE ~ "Not Recorded"
+  ))
+```
+
+-   Adding a simplified property type column
+
+```{r}
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  mutate(property_type_simple = case_when(
+    property_type == "House" ~ "House",
+    property_type == "Flat" ~ "Flat",
+    property_type %in% c("Maisonette", "Bungalow",
+                      "Park home") ~ "Other",
+    TRUE ~ "Not Recorded"
+  ))
+```
+
+### Use Postcode Lookup for LA, MSOA, LSOA
+
+```{r}
+postcode_msoa_lookup <- read.csv(here::here("large_data/postcode_msoa_lookup.csv"))
+
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  left_join(., postcode_msoa_lookup,
+            by = c("postcode" = "pcds"))
+```
+
+-   Removing incorrect LA assignments
+
+```{r include=FALSE}
+# Check how many LAs there are (should be 32)
+n_categories <- london_epc_certs_clean %>%
+  summarise(n = n_distinct(ladnm, na.rm = TRUE))
+
+unique(london_epc_certs_clean$ladnm)
+
+# list of London LAs
+london_la <- c(
+  "Barking and Dagenham", "Barnet", "Bexley", "Brent", "Bromley",
+  "Camden", "Croydon", "Ealing", "Enfield",
+  "Greenwich", "Hackney", "Hammersmith and Fulham", "Haringey",
+  "Harrow", "Havering", "Hillingdon", "Hounslow",
+  "Islington", "Kensington and Chelsea", "Kingston upon Thames", "Lambeth",
+  "Lewisham", "Merton", "Newham", "Redbridge",
+  "Richmond upon Thames", "Southwark", "Sutton", "Tower Hamlets",
+  "Waltham Forest", "Wandsworth", "Westminster"
+)
+
+# filter out rows where LA is in london list
+london_epc_certs_clean <- london_epc_certs_clean %>%
+  filter(ladnm %in% london_la)
+
+# Check to see that it worked
+unique(london_epc_certs_clean$ladnm)
+```
+
+FINAL london_epc_certs_clean
+
+```{r}
+write.csv(london_epc_certs_clean, here::here("large_data/london_epc_certs_clean.csv"), row.names = FALSE)
+```
