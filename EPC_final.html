@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8' />
+    <title>Impact of Potential Energy Improvements in UK Residential Buildings</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.17.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.17.0/mapbox-gl.js"></script>
+    <link rel="stylesheet" href="EPC_final.css">
+</head>
+<body>
+
+
+<div id="top-title">
+    <h1>How much energy can be saved by retrofitting UK residential buildings?</h1>
+    <span id="more-info-btn" onclick="toggleModal()">More Information</span>
+</div>
+
+<div id="info-modal" class="modal-overlay" onclick="toggleModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <span class="close-btn" onclick="toggleModal()">&times;</span>
+        
+        <h2 style="margin-top: 0; color: #333;">About the Map</h2>
+        
+        <p style="line-height: 1.6;">
+            This map visualizes spatial patterns of the gap between the UK's current residential energy use and its 
+            <strong>potential energy use</strong> if simple, cost-effective retrofitting were implemented.
+        </p>
+
+        <p style="line-height: 1.6;">
+            By hovering over an area, you can see how much these energy improvements would reduce 
+            <strong>energy consumption (and costs)</strong> and <strong>CO2 emissions</strong>, both at the household and area level.
+        </p>
+        
+
+<p style="font-size: 13px; color: #666; margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+    <strong>Data:</strong> 
+    <a href="https://epc.opendatacommunities.org/" target="_blank" style="color: #007cbf; text-decoration: underline;">EPC Open Data Communities</a>, 
+    <a href="https://digimap.edina.ac.uk/help/our-maps-and-data/os_products/" target="_blank" style="color: #007cbf; text-decoration: underline;">Digimap (OS Products)</a><br>
+    <a href="https://www.uswitch.com/gas-electricity/guides/regional-energy-prices/" target="_blank" style="color: #007cbf; text-decoration: underline;">2026 UK Electricity Prices</a><br>
+    
+    <strong>Data Scale:</strong> 
+    <a href="https://geoportal.statistics.gov.uk/datasets/3da2689754f449e2a4f6cd901c99dbd9_0/explore?location=55.347724%2C-3.317025%2C5" target="_blank" style="color: #007cbf; text-decoration: underline;">Local Authority</a> and 
+    <a href="https://geoportal.statistics.gov.uk/datasets/middle-layer-super-output-areas-december-2021-boundaries-ew-bgc-v3-2/about" target="_blank" style="color: #007cbf; text-decoration: underline;">MSOA</a> boundaries (ONS)
+    <br>
+    
+    <strong>Map Design:</strong> 
+    Inspired by <a href="http://127.0.0.1:5501/Mapbox_example5_HousePriceMap.html#6/52/-2.5" target="_blank" style="color: #007cbf; text-decoration: underline;">D.A. Smith</a>
+</p>
+    </div>
+</div>
+
+
+
+<div id='map'></div> 
+
+<div id="stats-panel">
+    <div id="stats-content">
+        <h2 style="margin:0 0 10px 0; color: #000; font-size: 20px;">Hover over an area</h2>
+        <p style="font-size: 14px; color: #000;">Potential savings will appear here as you explore the map.</p>
+    </div>
+</div>
+
+<div class='map-overlay'>
+    <div class='map-overlay-inner'>
+        <p style="margin: 0 0 8px 0; font-size: 15px;">Potential Energy Savings (kWh/m2)</p>
+        <div class="legend-row">
+            <div class="legend-bar-item" style="background-color:#1dab00;"></div>            
+            <div class="legend-bar-item" style="background-color:#29cd08;"></div>
+            <div class="legend-bar-item" style="background-color:#83db00;"></div>
+            <div class="legend-bar-item" style="background-color:#dbdf02;"></div>
+            <div class="legend-bar-item" style="background-color:#e2a200;"></div>
+            <div class="legend-bar-item" style="background-color:#e56f00;"></div>
+            <div class="legend-bar-item" style="background-color:#e00000;"></div>
+        </div>
+        <div class="legend-labels">
+            <span>0</span><span>30</span><span>60</span><span>80</span><span>100</span><span>120</span><span>150</span><span>220</span>
+        </div>
+        <p style="margin: 0 0 8px 0; font-size: 13px;">Data Source: <a href="https://epc.opendatacommunities.org/" target="_blank" style="color: #007cbf;">EPC Open Data Communities</a></p>
+    </div>
+</div>
+
+<script>
+    mapboxgl.accessToken = 'pk.eyJ1IjoiZW1pbHlkdWdtb3JlIiwiYSI6ImNta285NjZiZzAzMzQza3M5ZmRodHp6ZDcifQ.geVyLy4fYjBWRAGJSbwN-g';
+
+    var map = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/emilydugmore/cml80811j005101sdhf0rccro',
+        center: [-2.5, 52],
+        zoom: 6,
+        hash: true
+    });
+
+    map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+    map.addControl(new mapboxgl.ScaleControl(), 'bottom-left');
+
+    function createStatsHTML(props) {
+        const fmt = (x) => x ? x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") : 0;
+        const total = props.Building_Count || 1;
+        
+        const curG = Math.round(((props.EPC_cur_A_count + props.EPC_cur_B_count) / total) * 100);
+        const curY = Math.round(((props.EPC_cur_C_count + props.EPC_cur_D_count) / total) * 100);
+        const potG = Math.round(((props.EPC_pot_A_count + props.EPC_pot_B_count) / total) * 100);
+        const potY = Math.round(((props.EPC_pot_C_count + props.EPC_pot_D_count) / total) * 100);
+
+        return `
+    <h2 style="margin:0 0 10px; font-size: 20px; line-height: 1.2;">${props.LAD25NM || props.MSOA21NM}</h2>
+    <div style="font-size:13px; line-height:1.5;">
+        
+        <div style="font-size: 14px; font-weight: bold; margin-bottom: 5px; color: #000;">
+            Average Annual Household Potential Savings
+        </div>
+                        
+        Energy Consumption: 
+        <span style="color: #007cbf; font-weight: bold;">${fmt(Math.round(props.EC_H_gap_avg))} kWh (£${fmt(Math.round(props.EC_H_gap_avg*0.2769))})</span><br>
+
+        CO2 Emissions: 
+        <span style="color: #007cbf; font-weight: bold;">${fmt(props.CO2_H_gap_avg.toFixed(2))} tonnes</span><br> 
+        
+        <hr style="border:0; border-top:1px solid #eee; margin:10px 0;">
+        
+        <div style="font-size: 14px; font-weight: bold; margin-bottom: 5px; color: #000;">
+            Total Annual Area Potential Savings
+        </div>
+        
+        Energy Consumption: 
+        <span style="color: #007cbf; font-weight: bold;">${fmt(Math.round(props.EC_H_gap_tot))} million kWh (£${fmt(Math.round(props.EC_H_gap_tot*0.2769))} million)</span><br>
+        
+        CO2 Emissions: 
+        <span style="color: #007cbf; font-weight: bold;">${fmt(Math.round(props.CO2_H_gap_tot))} tonnes</span>
+
+        <hr style="border:0; border-top:1px solid #eee; margin:10px 0;">
+
+        <div style="font-size: 14px; font-weight: bold; margin-bottom: 10px; color: #000;">
+            Energy Efficiency Rating Distribution
+        </div>
+
+        <div style="margin-bottom:2px; font-weight: normal;">Current</div>
+        <div style="display:flex; height:18px; color:white; font-weight:bold; text-align:center; line-height:18px; margin-bottom:8px;">
+            <div style="width:${curG}%; background:#438a5e;">${curG}%</div>
+            <div style="width:${curY}%; background:#ebbc4e;">${curY}%</div>
+            <div style="flex-grow:1; background:#b83d3d;">${100-curG-curY}%</div>
+        </div>
+        
+        <div style="margin-bottom:2px; font-weight: normal;">Potential</div>
+        <div style="display:flex; height:18px; color:white; font-weight:bold; text-align:center; line-height:18px;">
+            <div style="width:${potG}%; background:#438a5e;">${potG}%</div>
+            <div style="width:${potY}%; background:#ebbc4e;">${potY}%</div>
+            <div style="flex-grow:1; background:#b83d3d;">${100-potG-potY}%</div>
+        </div>
+    </div>`;
+    }
+
+    map.on('load', function() {
+        // Invisible interaction layers
+        map.addLayer({
+            id: 'LocalAuthorities',
+            type: 'fill',
+            source: { type: 'vector', maxzoom: 7.5, url: 'mapbox://emilydugmore.5p5mao12' },
+            'source-layer': 'UK_EPC_LA_boundary-0m4225',
+            paint: { 'fill-color': '#fff', 'fill-opacity': 0 }
+        });
+
+        map.addLayer({
+            id: 'MSOA',
+            type: 'fill',
+            source: { type: 'vector', minzoom: 7.5, url: 'mapbox://emilydugmore.duukhey1' },
+            'source-layer': 'UK_EPC_MSOA_boundary-47da8j',
+            paint: { 'fill-color': '#fff', 'fill-opacity': 0 }
+        });
+
+        // Hover Highlight Layers
+        map.addLayer({
+            id: 'hover_fill',
+            type: 'fill',
+            source: { type: 'vector', maxzoom: 7.5, url: 'mapbox://emilydugmore.5p5mao12' },
+            'source-layer': 'UK_EPC_LA_boundary-0m4225',
+            paint: { 'fill-color': '#fff', 'fill-opacity': 0.35 },
+            filter: ['==','LAD25NM','empty']
+        });
+
+        map.addLayer({
+            id: 'msoa_hover_fill',
+            type: 'fill',
+            source: { type: 'vector', minzoom: 7.5, url: 'mapbox://emilydugmore.duukhey1' },
+            'source-layer': 'UK_EPC_MSOA_boundary-47da8j',
+            paint: { 'fill-color': '#fff', 'fill-opacity': 0.35 },
+            filter: ['==','MSOA21NM','empty']
+        });
+
+        map.on('mousemove', function(e) {
+            var la = map.queryRenderedFeatures(e.point, { layers: ['LocalAuthorities'] });
+            var msoa = map.queryRenderedFeatures(e.point, { layers: ['MSOA'] });
+            
+            if (la.length==1) {
+                var props = la[0].properties;
+                map.setFilter('hover_fill', ['==','LAD25NM', props.LAD25NM]);
+                document.getElementById('stats-content').innerHTML = createStatsHTML(props);
+            } 
+            else if (msoa.length==1) {
+                var props = msoa[0].properties;
+                map.setFilter('msoa_hover_fill', ['==','MSOA21NM', props.MSOA21NM]);
+                document.getElementById('stats-content').innerHTML = createStatsHTML(props);
+            } 
+            else {
+                map.setFilter('hover_fill', ['==','LAD25NM','empty']);
+                map.setFilter('msoa_hover_fill', ['==','MSOA21NM','empty']);
+                document.getElementById('stats-content').innerHTML = 
+                    '<h2 style="margin:0 0 10px 0; color: #000; font-size: 20px;">Hover over an area</h2>' +
+                    '<p style="font-size: 14px; color: #000;">Potential savings will appear here as you explore the map.</p>';
+            }
+        });
+    });
+
+    function toggleModal() {
+    const modal = document.getElementById('info-modal');
+    if (modal.style.display === 'flex') {
+        modal.style.display = 'none';
+    } else {
+        modal.style.display = 'flex';
+    }
+}
+</script>
+</body>
+</html>
